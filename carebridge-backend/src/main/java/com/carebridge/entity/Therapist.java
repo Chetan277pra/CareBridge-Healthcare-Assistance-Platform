@@ -25,6 +25,9 @@ public class Therapist {
     private String phone;
 
     private String specialization;
+
+    private Long affiliatedHospitalId;
+    private Boolean freelancing;
     
     private String location;
     private Double latitude;

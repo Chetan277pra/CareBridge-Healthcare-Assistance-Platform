@@ -25,20 +25,25 @@ function Results() {
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
   const [requestLoading, setRequestLoading] = useState(false);
 
-  // Check route availability for both therapist and hospital
-  const hasTherapistRoute =
+  const hasPatientCoords =
     result &&
     result.patientLatitude != null &&
-    result.patientLongitude != null &&
+    result.patientLongitude != null;
+
+  const hasTherapistCoords =
+    result &&
     result.therapistLatitude != null &&
     result.therapistLongitude != null;
 
-  const hasHospitalRoute =
+  const hasHospitalCoords =
     result &&
-    result.patientLatitude != null &&
-    result.patientLongitude != null &&
     result.hospitalLatitude != null &&
     result.hospitalLongitude != null;
+
+  // Check route availability for both therapist and hospital
+  const hasTherapistRoute = hasPatientCoords && hasTherapistCoords;
+
+  const hasHospitalRoute = hasPatientCoords && hasHospitalCoords;
 
   // Calculate distances
   const therapistDistanceKm = hasTherapistRoute
@@ -54,6 +59,15 @@ function Results() {
     ? calculateDistanceKm(
         result.patientLatitude,
         result.patientLongitude,
+        result.hospitalLatitude,
+        result.hospitalLongitude
+      )
+    : null;
+
+  const therapistHospitalDistanceKm = hasTherapistCoords && hasHospitalCoords
+    ? calculateDistanceKm(
+        result.therapistLatitude,
+        result.therapistLongitude,
         result.hospitalLatitude,
         result.hospitalLongitude
       )
@@ -227,6 +241,9 @@ function Results() {
               <CardContent>
                 <div className="text-lg font-semibold mb-2">{result.therapistName}</div>
                 <p className="text-green-100 text-sm">This specialist has expertise in treating {result.disease.toLowerCase()} and similar conditions.</p>
+                {therapistDistanceKm != null && (
+                  <p className="text-green-50 text-sm mt-2 font-medium">Distance from you: {therapistDistanceKm.toFixed(1)} km</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -250,6 +267,9 @@ function Results() {
               <CardContent>
                 <div className="text-lg font-semibold mb-2">{result.hospitalSuggestion}</div>
                 <p className="text-purple-100 text-sm">This facility specializes in {result.disease.toLowerCase()} treatment and has excellent patient care ratings.</p>
+                {hospitalDistanceKm != null && (
+                  <p className="text-purple-50 text-sm mt-2 font-medium">Distance from you: {hospitalDistanceKm.toFixed(1)} km</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -282,6 +302,32 @@ function Results() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {(therapistDistanceKm != null || hospitalDistanceKm != null || therapistHospitalDistanceKm != null) && (
+                    <div className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+                      <p className="text-sm uppercase tracking-[0.2em] text-slate-300">Distance Summary</p>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {therapistDistanceKm != null && (
+                          <div className="rounded-2xl border border-green-500/30 bg-green-500/10 p-3">
+                            <p className="text-xs text-green-200">You ↔ Specialist</p>
+                            <p className="text-base font-semibold text-white">{therapistDistanceKm.toFixed(1)} km</p>
+                          </div>
+                        )}
+                        {hospitalDistanceKm != null && (
+                          <div className="rounded-2xl border border-purple-500/30 bg-purple-500/10 p-3">
+                            <p className="text-xs text-purple-200">You ↔ Hospital</p>
+                            <p className="text-base font-semibold text-white">{hospitalDistanceKm.toFixed(1)} km</p>
+                          </div>
+                        )}
+                        {therapistHospitalDistanceKm != null && (
+                          <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-3">
+                            <p className="text-xs text-cyan-200">Specialist ↔ Hospital</p>
+                            <p className="text-base font-semibold text-white">{therapistHospitalDistanceKm.toFixed(1)} km</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Location Info Grid */}
                   <div className="grid gap-4 lg:grid-cols-3 mb-6">
                     <div className="rounded-3xl border border-white/10 bg-white/5 p-4">

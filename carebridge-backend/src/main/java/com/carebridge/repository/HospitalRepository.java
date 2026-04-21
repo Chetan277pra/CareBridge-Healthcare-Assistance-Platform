@@ -10,5 +10,6 @@ import java.util.Optional;
 public interface HospitalRepository extends JpaRepository<Hospital, Long> {
     Hospital findTopByOrderByRatingDesc();
     Optional<Hospital> findTopBySpecializationIgnoreCaseOrderByRatingDesc(String specialization);
+    Optional<Hospital> findTopBySpecializationContainingIgnoreCaseOrderByRatingDesc(String specialization);
     Optional<Hospital> findByEmail(String email);
 }

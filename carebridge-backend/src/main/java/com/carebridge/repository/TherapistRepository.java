@@ -10,5 +10,6 @@ import java.util.Optional;
 public interface TherapistRepository extends JpaRepository<Therapist, Long> {
     Optional<Therapist> findTopBySpecializationOrderByRatingDesc(String specialization);
     Optional<Therapist> findTopBySpecializationIgnoreCaseOrderByRatingDesc(String specialization);
+    Optional<Therapist> findTopBySpecializationContainingIgnoreCaseOrderByRatingDesc(String specialization);
     Optional<Therapist> findByEmail(String email);
 }

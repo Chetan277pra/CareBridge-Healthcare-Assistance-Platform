@@ -54,6 +54,7 @@ public class AppointmentController {
         }
         if (therapist == null && request.getSpecialization() != null && !request.getSpecialization().isBlank()) {
             therapist = therapistRepository.findTopBySpecializationIgnoreCaseOrderByRatingDesc(request.getSpecialization())
+                    .or(() -> therapistRepository.findTopBySpecializationContainingIgnoreCaseOrderByRatingDesc(request.getSpecialization()))
                     .orElse(null);
         }
         if (therapist == null) {
@@ -68,6 +69,7 @@ public class AppointmentController {
         }
         if (hospital == null && request.getSpecialization() != null && !request.getSpecialization().isBlank()) {
             hospital = hospitalRepository.findTopBySpecializationIgnoreCaseOrderByRatingDesc(request.getSpecialization())
+                    .or(() -> hospitalRepository.findTopBySpecializationContainingIgnoreCaseOrderByRatingDesc(request.getSpecialization()))
                     .orElse(null);
         }
         if (hospital == null) {

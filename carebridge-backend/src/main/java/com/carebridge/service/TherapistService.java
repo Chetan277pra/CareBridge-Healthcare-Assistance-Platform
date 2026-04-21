@@ -14,6 +14,7 @@ public class TherapistService {
     public Therapist getBestTherapist(String issue) {
         return repository
                 .findTopBySpecializationIgnoreCaseOrderByRatingDesc(issue)
+                .or(() -> repository.findTopBySpecializationContainingIgnoreCaseOrderByRatingDesc(issue))
                 .orElse(null);
     }
 }

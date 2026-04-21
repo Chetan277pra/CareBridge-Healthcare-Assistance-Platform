@@ -14,6 +14,7 @@ public class HospitalService {
     public String recommendHospital(String disease) {
         Hospital hospital = repository
                 .findTopBySpecializationIgnoreCaseOrderByRatingDesc(disease)
+                .or(() -> repository.findTopBySpecializationContainingIgnoreCaseOrderByRatingDesc(disease))
                 .orElseGet(repository::findTopByOrderByRatingDesc);
         return hospital != null ? hospital.getName() : "No hospital found";
     }
@@ -21,6 +22,7 @@ public class HospitalService {
     public Hospital getBestHospital(String disease) {
         return repository
                 .findTopBySpecializationIgnoreCaseOrderByRatingDesc(disease)
+                .or(() -> repository.findTopBySpecializationContainingIgnoreCaseOrderByRatingDesc(disease))
                 .orElseGet(repository::findTopByOrderByRatingDesc);
     }
 }

@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +44,9 @@ public class UserService {
                 .phone(request.getPhone())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .role(request.getRole())
+            .location(request.getLocation())
+            .latitude(request.getLatitude())
+            .longitude(request.getLongitude())
                 .createdAt(LocalDateTime.now())
                 .build();
 
@@ -72,25 +77,50 @@ public class UserService {
     }
 
     private void createRoleSpecificProfile(RegisterRequest request) {
-        String specialization = request.getSpecialization();
+        List<String> specializations = request.getSpecializations() == null
+                ? List.of()
+                : request.getSpecializations().stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .collect(Collectors.toList());
+
+        String specialization = String.join(", ", specializations);
         boolean isSpecializedRole = request.getRole() == UserRole.THERAPIST || request.getRole() == UserRole.HOSPITAL;
-        if (isSpecializedRole && !StringUtils.hasText(specialization)) {
-            throw new RuntimeException("Specialization is required for therapist and hospital registration");
+        if (isSpecializedRole && specializations.isEmpty()) {
+            throw new RuntimeException("At least one specialization is required for therapist and hospital registration");
         }
 
         if (request.getRole() == UserRole.THERAPIST) {
+            if (Boolean.FALSE.equals(request.getFreelancing()) && request.getAffiliatedHospitalId() == null) {
+                throw new RuntimeException("Please select a hospital or choose freelancing");
+            }
+
+            if (request.getAffiliatedHospitalId() != null &&
+                    hospitalRepository.findById(request.getAffiliatedHospitalId()).isEmpty()) {
+                throw new RuntimeException("Selected hospital does not exist");
+            }
+
             Therapist therapist = new Therapist();
             therapist.setName(request.getFullName());
             therapist.setEmail(request.getEmail());
+            therapist.setPhone(request.getPhone());
             therapist.setSpecialization(specialization);
+            therapist.setAffiliatedHospitalId(request.getAffiliatedHospitalId());
+            therapist.setFreelancing(request.getFreelancing() == null || request.getFreelancing());
+            therapist.setLocation(request.getLocation());
+            therapist.setLatitude(request.getLatitude());
+            therapist.setLongitude(request.getLongitude());
             therapist.setRating(0.0);
             therapistRepository.save(therapist);
         } else if (request.getRole() == UserRole.HOSPITAL) {
             Hospital hospital = new Hospital();
             hospital.setName(request.getFullName());
             hospital.setEmail(request.getEmail());
-            hospital.setLocation("Unknown");
+            hospital.setPhone(request.getPhone());
+            hospital.setLocation(request.getLocation());
             hospital.setSpecialization(specialization);
+            hospital.setLatitude(request.getLatitude());
+            hospital.setLongitude(request.getLongitude());
             hospital.setRating(0.0);
             hospitalRepository.save(hospital);
         }

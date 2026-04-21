@@ -19,7 +19,8 @@ public class HistoryController {
         return service.getUserHistory(userId);
     }
     @GetMapping("/latest/{userId}")
-    public PredictionHistory getLatest(@PathVariable Long userId) {
+    public PredictionHistory getLatest(@PathVariable
+         Long userId) {
         return service.getLatest(userId);
     }
 }
