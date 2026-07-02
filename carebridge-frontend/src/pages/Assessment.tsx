@@ -1,4 +1,4 @@
-﻿import { useMemo, useState, type ChangeEvent } from "react";
+import { useMemo, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,7 +133,7 @@ function Assessment() {
       const symptomsArray = Array.from(formData.symptoms);
 
       const res = await axios.post(
-        "http://localhost:8080/api/prediction/analyze",
+        "http://localhost:8080/api/health/analyze",
         {
           symptoms: symptomsArray,
           weight: parseFloat(formData.weight),

@@ -17,6 +17,8 @@ public class PredictionResponse {
     private Double hospitalLatitude;
     private Double hospitalLongitude;
     private String hospitalAddress;
+    private Double therapistDistanceKm;
+    private Double hospitalDistanceKm;
 
     public PredictionResponse(String disease, String therapistName, String hospitalSuggestion) {
         this.disease = disease;

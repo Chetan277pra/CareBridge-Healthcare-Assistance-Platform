@@ -29,40 +29,40 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             FilterChain filterChain)
             throws ServletException, IOException {
 
-        // ✅ 1. Skip auth endpoints
+        // 1. Skip auth endpoints
         String path = request.getServletPath();
 
-        // ✅ skip ALL public endpoints safely
+        // skip ALL public endpoints safely
         if (path.startsWith("/api/auth") || path.equals("/error")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // ✅ 2. Get Authorization header
+        // 2. Get Authorization header
         final String authHeader = request.getHeader("Authorization");
 
         String jwt = null;
         String userEmail = null;
 
-        // ✅ 3. Validate header format
+        // 3. Validate header format
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
-            return;   // 🔥 IMPORTANT (prevents 403 crash cases)
+            return;   //  IMPORTANT (prevents 403 crash cases)
         }
 
-        // ✅ 4. Extract token safely
+        // 4. Extract token safely
         try {
             jwt = authHeader.substring(7);
             userEmail = jwtUtil.extractUsername(jwt);
         } catch (Exception e) {
             filterChain.doFilter(request, response);
-            return;   // 🔥 invalid token → skip
+            return;   //  invalid token → skip
         }
         System.out.println("=== JWT FILTER ===");
         System.out.println("Header: " + authHeader);
         System.out.println("Token: " + jwt);
         System.out.println("Email: " + userEmail);
-        // ✅ 5. Authenticate user
+        // 5. Authenticate user
         if (userEmail != null &&
                 SecurityContextHolder.getContext().getAuthentication() == null) {
 

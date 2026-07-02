@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { BookingModal } from "@/components/BookingModal";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import axios from "axios";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { useAppointmentSocket } from "@/hooks/useAppointmentSocket";
+import { useCountdown } from "@/hooks/useCountdown";
+import { NotificationBell } from "@/components/NotificationBell";
 
 interface Doctor {
   id: string;
@@ -27,6 +32,23 @@ function Dashboard() {
   const [searchText, setSearchText] = useState("");
   const [bookingStatus, setBookingStatus] = useState<string | null>(null);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<any>(null);
+  const [selectedType, setSelectedType] = useState<'therapist' | 'hospital' | null>(null);
+
+  // Analytics state
+  const [stats, setStats] = useState<any>(null);
+
+  // Live WebSocket updates
+  const { lastEvent } = useAppointmentSocket({
+    onEvent: () => fetchStats(),
+  });
+
+  // Countdown to next appointment
+  const nextDateTime = stats?.nextAppointmentDate && stats?.nextAppointmentTime
+    ? `${stats.nextAppointmentDate}T${stats.nextAppointmentTime}`
+    : null;
+  const countdown = useCountdown(nextDateTime);
 
   const filteredDoctors = doctors.filter((doctor) =>
     doctor.name.toLowerCase().includes(searchText.toLowerCase()) ||
@@ -45,7 +67,24 @@ function Dashboard() {
       return;
     }
 
-    const fetchProviders = async () => {
+    fetchProviders();
+    fetchStats();
+  }, [navigate]);
+
+  const fetchStats = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get("http://localhost:8080/api/dashboard/patient", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setStats(res.data);
+    } catch {
+      // stats unavailable — not critical
+    }
+  };
+
+  const fetchProviders = async () => {
+    const token = localStorage.getItem("token");
       try {
         const headers = { Authorization: `Bearer ${token}` };
         const doctorRes = await axios.get("http://localhost:8080/api/therapist", { headers });
@@ -85,10 +124,20 @@ function Dashboard() {
       }
     };
 
-    fetchProviders();
-  }, [navigate]);
+  const handleBookAppointment = (provider: Doctor | Hospital, type: 'therapist' | 'hospital') => {
+    setSelectedProvider(provider);
+    setSelectedType(type);
+    setIsBookingModalOpen(true);
+  };
 
-  const handleBookAppointment = async (provider: Doctor | Hospital, type: 'therapist' | 'hospital') => {
+  const handleConfirmBooking = async (bookingData: {
+    appointmentDate: string;
+    appointmentTime: string;
+    reasonForVisit: string;
+    notes: string;
+    slotId: number | null;
+  }) => {
+    if (!selectedProvider || !selectedType) return;
     const patientEmail = localStorage.getItem("userEmail");
     if (!patientEmail) {
       setBookingStatus("Unable to locate your account. Please log in again.");
@@ -96,32 +145,45 @@ function Dashboard() {
     }
 
     setBookingStatus(null);
-    const providerId = `${type}-${provider.id}`;
+    const providerId = `${selectedType}-${selectedProvider.id}`;
     setBookingId(providerId);
 
     try {
-      await axios.post("http://localhost:8080/api/appointments/request", {
+      const numericId = isNaN(Number(selectedProvider.id)) ? null : Number(selectedProvider.id);
+
+      await axios.post("http://localhost:8080/api/appointments/book", {
         patientEmail,
         disease: "General Consultation",
-        message: `Requesting appointment with ${provider.name}`,
-        specialization: provider.specialization,
-        therapistQuery: type === 'therapist' ? provider.name : undefined,
-        hospitalQuery: type === 'hospital' ? provider.name : undefined,
+        message: bookingData.reasonForVisit,
+        specialization: selectedProvider.specialization,
+        therapistQuery: selectedType === 'therapist' ? selectedProvider.name : undefined,
+        hospitalQuery: selectedType === 'hospital' ? selectedProvider.name : undefined,
+        therapistId: selectedType === 'therapist' ? numericId : undefined,
+        hospitalId: selectedType === 'hospital' ? numericId : undefined,
+        appointmentDate: bookingData.appointmentDate,
+        appointmentTime: bookingData.appointmentTime,
+        reasonForVisit: bookingData.reasonForVisit,
+        notes: bookingData.notes,
+        slotId: bookingData.slotId,
       }, {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
       });
 
-      setBookingStatus(`Appointment request sent to ${provider.name}. Check your results page for status.`);
+      setBookingStatus(`Appointment request sent to ${selectedProvider.name}. Check your appointments page for status.`);
       setTimeout(() => setBookingId(null), 3000);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setBookingStatus("Unable to send appointment request. Please try again later.");
+      const errMessage = error?.response?.data?.message || "Unable to send appointment request. Please try again later.";
+      setBookingStatus(`Error: ${errMessage}`);
       setBookingId(null);
+      throw error; // Re-throw so BookingModal can show the error
     }
   };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("userEmail");
     navigate("/");
   };
 
@@ -151,9 +213,12 @@ function Dashboard() {
           <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
             CareBridge
           </h1>
-          <Button onClick={handleLogout} className="bg-red-500 hover:bg-red-600 text-white rounded-xl px-6 py-2">
-            🚪 Logout
-          </Button>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <NotificationBell liveEvent={lastEvent} />
+            <Button onClick={handleLogout} className="bg-red-500 hover:bg-red-600 text-white rounded-xl px-6 py-2">
+              🚪 Logout
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -176,6 +241,82 @@ function Dashboard() {
         {bookingStatus && (
           <div className="mb-8 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-center animate-fade-in">
             {bookingStatus}
+          </div>
+        )}
+
+        {/* Analytics Stats Cards */}
+        {stats && (
+          <div className="mb-10 animate-fade-in" style={{ animationDelay: "0.1s" }}>
+            <h3 className="text-2xl font-bold text-gray-800 mb-4">📊 Your Appointment Overview</h3>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+              {[
+                { label: "Total",     value: stats.totalAppointments, color: "from-indigo-500 to-blue-600",    icon: "📋" },
+                { label: "Pending",   value: stats.pendingCount,       color: "from-amber-500 to-orange-600",  icon: "⏳" },
+                { label: "Accepted",  value: stats.acceptedCount,      color: "from-emerald-500 to-green-600", icon: "✅" },
+                { label: "Completed", value: stats.completedCount,     color: "from-blue-500 to-cyan-600",     icon: "🎉" },
+                { label: "Cancelled", value: stats.cancelledCount + stats.rejectedCount, color: "from-red-500 to-rose-600", icon: "❌" },
+              ].map(stat => (
+                <div key={stat.label} className={`rounded-2xl bg-gradient-to-br ${stat.color} p-5 text-white shadow-lg`}>
+                  <div className="text-2xl mb-1">{stat.icon}</div>
+                  <div className="text-3xl font-bold">{stat.value}</div>
+                  <div className="text-sm opacity-80 mt-1">{stat.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Next Appointment Countdown */}
+            {stats.nextAppointmentId && (
+              <div className="mb-6 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-700 p-6 text-white shadow-xl">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div>
+                    <div className="text-sm uppercase tracking-widest opacity-70 mb-1">⏱ Next Appointment</div>
+                    <div className="text-lg font-semibold">{stats.nextAppointmentProvider}</div>
+                    <div className="text-sm opacity-80">
+                      {stats.nextAppointmentDate} at {stats.nextAppointmentTime}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    {countdown.isPast ? (
+                      <span className="text-yellow-300 font-bold">Appointment time passed</span>
+                    ) : countdown.isNow ? (
+                      <span className="text-yellow-300 font-bold animate-pulse">🔴 Starting Now!</span>
+                    ) : (
+                      <div>
+                        <div className="text-3xl font-bold font-mono tracking-wide">{countdown.formatted}</div>
+                        <div className="text-sm opacity-70">remaining</div>
+                      </div>
+                    )}
+                  </div>
+                  <Link to={`/appointments/${stats.nextAppointmentId}`}>
+                    <Button className="bg-white/20 hover:bg-white/30 text-white border border-white/30 rounded-xl">
+                      View Details →
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Monthly Bar Chart */}
+            {stats.monthlyChart?.length > 0 && (
+              <div className="rounded-2xl bg-white border border-gray-200 shadow-md p-6">
+                <h4 className="text-base font-bold text-gray-700 mb-4">📈 Appointments (Last 6 Months)</h4>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={stats.monthlyChart}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#6b7280" }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: "#6b7280" }} />
+                    <Tooltip contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }} />
+                    <Bar dataKey="count" fill="url(#grad)" radius={[6, 6, 0, 0]} />
+                    <defs>
+                      <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#6366f1" />
+                        <stop offset="100%" stopColor="#a78bfa" />
+                      </linearGradient>
+                    </defs>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
         )}
 
@@ -393,6 +534,14 @@ function Dashboard() {
           </div>
         </div>
       </div>
+      <BookingModal
+        isOpen={isBookingModalOpen}
+        onClose={() => setIsBookingModalOpen(false)}
+        onSubmit={handleConfirmBooking}
+        providerName={selectedProvider?.name || ""}
+        providerId={selectedProvider?.id ? Number(selectedProvider.id) : null}
+        providerType={selectedType === 'therapist' ? 'THERAPIST' : selectedType === 'hospital' ? 'HOSPITAL' : null}
+      />
     </div>
   );
 }

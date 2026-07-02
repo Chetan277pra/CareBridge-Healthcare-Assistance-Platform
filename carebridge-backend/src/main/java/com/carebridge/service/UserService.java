@@ -29,7 +29,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
 
-    // ✅ REGISTER USER
+    //  REGISTER USER
     public String register(RegisterRequest request) {
 
         // 🔹 Check if email already exists
@@ -56,7 +56,7 @@ public class UserService {
         return "User registered successfully";
     }
 
-    // ✅ LOGIN USER
+    //  LOGIN USER
     public String login(LoginRequest request) {
 
         // 🔹 Find user by email
@@ -73,7 +73,7 @@ public class UserService {
         }
 
         // 🔹 Generate JWT token
-        return jwtUtil.generateToken(user.getEmail());
+        return jwtUtil.generateToken(user.getEmail(), user.getRole().name());
     }
 
     private void createRoleSpecificProfile(RegisterRequest request) {

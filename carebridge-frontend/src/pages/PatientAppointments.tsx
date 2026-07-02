@@ -1,32 +1,38 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { useAppointmentSocket } from "@/hooks/useAppointmentSocket";
+import { useCountdown } from "@/hooks/useCountdown";
+import { NotificationBell } from "@/components/NotificationBell";
 
 interface Appointment {
-  id: string;
+  id: number | string;
   patientName?: string;
   patientEmail?: string;
-  therapistName?: string;
+  patientPhone?: string;
+  disease: string;
+  message?: string;
+  status: string;
+  specialization?: string;
   therapistEmail?: string;
   hospitalEmail?: string;
-  disease: string;
-  date: string;
-  status: "pending" | "accepted" | "rejected";
-  message?: string;
+  appointmentDate?: string;
+  appointmentTime?: string;
+  appointmentDateTime?: string;
+  reasonForVisit?: string;
+  notes?: string;
+  therapistDistanceKm?: number;
+  hospitalDistanceKm?: number;
+  requestedAt?: string;
+  updatedAt?: string;
 }
 
 interface LatLng {
   lat: number;
   lng: number;
 }
-
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-
-const patientLocation: LatLng = {
-  lat: 40.73061,
-  lng: -73.935242,
-};
 
 const hospitalLocationMap: Record<
   string,
@@ -59,23 +65,6 @@ const hospitalLocationMap: Record<
   },
 };
 
-const diseaseImageMap: Record<string, string> = {
-  diabetes:
-    "https://images.unsplash.com/photo-1576765607924-1f117ede6826?auto=format&fit=crop&w=1200&q=80",
-  hypertension:
-    "https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?auto=format&fit=crop&w=1200&q=80",
-  migraine:
-    "https://images.unsplash.com/photo-1499084732479-de2c02d45fc4?auto=format&fit=crop&w=1200&q=80",
-  asthma:
-    "https://images.unsplash.com/photo-1582130665638-2dd8343fd655?auto=format&fit=crop&w=1200&q=80",
-  depression:
-    "https://images.unsplash.com/photo-1520221234888-9d8775d32d30?auto=format&fit=crop&w=1200&q=80",
-  "general consultation":
-    "https://images.unsplash.com/photo-1580281657521-0fabc3c9b47d?auto=format&fit=crop&w=1200&q=80",
-  default:
-    "https://images.unsplash.com/photo-1580281657521-0fabc3c9b47d?auto=format&fit=crop&w=1200&q=80",
-};
-
 const getHospitalLocation = (
   email?: string
 ): { coords: LatLng; name: string; address: string } => {
@@ -96,33 +85,104 @@ const getHospitalLocation = (
   );
 };
 
-const getDiseaseImage = (disease: string) => {
-  const key = disease.trim().toLowerCase();
-  return diseaseImageMap[key] || diseaseImageMap.default;
+const formatTimestamp = (isoString?: string) => {
+  if (!isoString) return "N/A";
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleString("en-US", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return isoString;
+  }
 };
 
-const calculateDistanceKm = (origin: LatLng, destination: LatLng) => {
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const earthRadiusKm = 6371;
-
-  const dLat = toRad(destination.lat - origin.lat);
-  const dLng = toRad(destination.lng - origin.lng);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(origin.lat)) *
-      Math.cos(toRad(destination.lat)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return earthRadiusKm * c;
+const formatTime = (timeString?: string) => {
+  if (!timeString) return "N/A";
+  try {
+    // Expects "HH:mm" or "HH:mm:ss"
+    const [hours, minutes] = timeString.split(":");
+    const h = parseInt(hours);
+    const ampm = h >= 12 ? "PM" : "AM";
+    const displayHour = h % 12 || 12;
+    return `${displayHour}:${minutes} ${ampm}`;
+  } catch {
+    return timeString;
+  }
 };
+
+const formatDate = (dateString?: string) => {
+  if (!dateString) return "N/A";
+  try {
+    const d = new Date(dateString);
+    return d.toLocaleDateString("en-US", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+  } catch {
+    return dateString;
+  }
+};
+
+/** Small inline countdown for appointment cards */
+function AptCountdown({ dateTimeStr }: { dateTimeStr: string }) {
+  const cd = useCountdown(dateTimeStr);
+  if (cd.isPast) return null;
+  return (
+    <div className={`mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+      cd.isNow
+        ? "bg-red-500/20 text-red-300 border-red-500/30 animate-pulse"
+        : "bg-indigo-500/15 text-indigo-300 border-indigo-500/25"
+    }`}>
+      <span>{cd.isNow ? "🔴" : "⏱"}</span>
+      <span>{cd.isNow ? "Starting Now!" : `In ${cd.formatted}`}</span>
+    </div>
+  );
+}
 
 function PatientAppointments() {
   const navigate = useNavigate();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Search & Filter State
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("ALL");
+
+  const fetchAppointments = async () => {
+    const token = localStorage.getItem("token");
+    const userEmail = localStorage.getItem("userEmail");
+    if (!token || !userEmail) return;
+    try {
+      const response = await axios.get(
+        `http://localhost:8080/api/appointments/history?email=${userEmail}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setAppointments(response.data || []);
+    } catch {
+      // ignore on refresh
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Live WebSocket updates
+  const { lastEvent } = useAppointmentSocket({
+    onEvent: (event) => {
+      // Update status directly in local state for instant feedback
+      setAppointments(prev => prev.map(apt =>
+        apt.id === event.appointmentId
+          ? { ...apt, status: event.status }
+          : apt
+      ));
+    },
+  });
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -132,42 +192,6 @@ function PatientAppointments() {
       navigate("/");
       return;
     }
-
-    const fetchAppointments = async () => {
-      try {
-        const response = await axios.get(
-          `http://localhost:8080/api/appointments/patient?email=${userEmail}`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        setAppointments(response.data || []);
-      } catch (error) {
-        console.log("Using mock appointments");
-        // Mock data fallback
-        setAppointments([
-          {
-            id: "apt1",
-            therapistName: "Dr. Sarah Johnson",
-            therapistEmail: "sarah@example.com",
-            disease: "Diabetes",
-            date: new Date(Date.now() + 86400000).toISOString(),
-            status: "pending",
-            message: "Waiting for doctor to accept your request",
-          },
-          {
-            id: "apt2",
-            therapistName: "Dr. Michael Chen",
-            therapistEmail: "michael@example.com",
-            disease: "Hypertension",
-            date: new Date(Date.now() + 172800000).toISOString(),
-            status: "accepted",
-            message: "Doctor has accepted your appointment",
-          },
-        ]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchAppointments();
   }, [navigate]);
 
@@ -178,150 +202,71 @@ function PatientAppointments() {
     navigate("/");
   };
 
-  const appointmentCards = useMemo(
-    () =>
-      appointments.map((apt) => {
-        const hospital = getHospitalLocation(apt.hospitalEmail);
-        const distanceKm = calculateDistanceKm(patientLocation, hospital.coords);
-        const mapSrc = GOOGLE_MAPS_API_KEY
-          ? `https://www.google.com/maps/embed/v1/directions?key=${GOOGLE_MAPS_API_KEY}&origin=${encodeURIComponent(
-              `${patientLocation.lat},${patientLocation.lng}`
-            )}&destination=${encodeURIComponent(`${hospital.coords.lat},${hospital.coords.lng}`)}&mode=driving`
-          : null;
+  const getStatusBadge = (status: string) => {
+    const s = status.toUpperCase();
+    switch (s) {
+      case "PENDING":
+        return "text-yellow-300 bg-yellow-500/10 border border-yellow-500/30";
+      case "ACCEPTED":
+        return "text-emerald-300 bg-emerald-500/10 border border-emerald-500/30";
+      case "REJECTED":
+        return "text-rose-300 bg-rose-500/10 border border-rose-500/30";
+      case "COMPLETED":
+        return "text-blue-300 bg-blue-500/10 border border-blue-500/30";
+      case "CANCELLED":
+        return "text-gray-400 bg-slate-800 border border-slate-700";
+      case "RESCHEDULED":
+        return "text-orange-300 bg-orange-500/10 border border-orange-500/30";
+      default:
+        return "text-slate-300 bg-slate-500/10 border border-slate-500/30";
+    }
+  };
 
-        return (
-          <div
-            key={apt.id}
-            className={`rounded-3xl border border-slate-700/70 bg-slate-950/70 shadow-2xl shadow-black/20 p-6 backdrop-blur-xl transition duration-300 hover:-translate-y-1 ${
-              apt.status === "accepted"
-                ? "ring-2 ring-emerald-500/40"
-                : apt.status === "rejected"
-                ? "ring-2 ring-rose-500/40"
-                : "ring-2 ring-yellow-400/30"
-            }`}
-          >
-            <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm uppercase tracking-[0.2em] text-cyan-300">Appointment</p>
-                    <h3 className="text-3xl font-semibold text-white">{apt.disease}</h3>
-                    <p className="mt-2 text-slate-400">{hospital.name}</p>
-                  </div>
-                  <div className="rounded-3xl bg-gradient-to-br from-cyan-500/30 to-blue-500/15 px-4 py-3 text-right">
-                    <p className="text-xs text-slate-300">Distance</p>
-                    <p className="text-2xl font-bold text-white">{distanceKm.toFixed(1)} km</p>
-                  </div>
-                </div>
+  const filteredAppointments = appointments.filter(apt => {
+    const aptStatus = (apt.status || "PENDING").toUpperCase();
+    const matchesStatus = filter === "ALL" || aptStatus === filter;
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-3xl border border-slate-700/80 bg-slate-900/80 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Patient location</p>
-                    <p className="mt-2 text-white">Your current location</p>
-                    <p className="mt-1 text-sm text-slate-400">Lat {patientLocation.lat.toFixed(4)}, Lng {patientLocation.lng.toFixed(4)}</p>
-                  </div>
-                  <div className="rounded-3xl border border-slate-700/80 bg-slate-900/80 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Hospital location</p>
-                    <p className="mt-2 text-white">{hospital.address}</p>
-                    <p className="mt-1 text-sm text-slate-400">Lat {hospital.coords.lat.toFixed(4)}, Lng {hospital.coords.lng.toFixed(4)}</p>
-                  </div>
-                </div>
+    const hospital = getHospitalLocation(apt.hospitalEmail);
+    const searchString = search.toLowerCase();
+    const matchesSearch =
+      apt.id?.toString().includes(searchString) ||
+      (apt.disease && apt.disease.toLowerCase().includes(searchString)) ||
+      (apt.specialization && apt.specialization.toLowerCase().includes(searchString)) ||
+      (apt.therapistEmail && apt.therapistEmail.toLowerCase().includes(searchString)) ||
+      (hospital.name && hospital.name.toLowerCase().includes(searchString)) ||
+      (apt.reasonForVisit && apt.reasonForVisit.toLowerCase().includes(searchString));
 
-                <div className="overflow-hidden rounded-3xl border border-slate-700/80 bg-slate-900/80">
-                  <img
-                    src={getDiseaseImage(apt.disease)}
-                    alt={apt.disease}
-                    className="h-56 w-full object-cover transition duration-500 hover:scale-105"
-                  />
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-3xl border border-slate-700/80 bg-slate-900/80 p-4">
-                    <p className="text-sm text-slate-400">Provider</p>
-                    <p className="text-white font-semibold">{apt.therapistName || "CareBridge Specialist"}</p>
-                    <p className="text-sm text-slate-400">{apt.therapistEmail || apt.hospitalEmail}</p>
-                  </div>
-                  <div className="rounded-3xl border border-slate-700/80 bg-slate-900/80 p-4">
-                    <p className="text-sm text-slate-400">Status</p>
-                    <p
-                      className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${
-                        apt.status === "accepted"
-                          ? "bg-emerald-500/15 text-emerald-300"
-                          : apt.status === "rejected"
-                          ? "bg-rose-500/15 text-rose-300"
-                          : "bg-yellow-500/15 text-yellow-300"
-                      }`}
-                    >
-                      {apt.status.toUpperCase()}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="rounded-3xl border border-slate-700/80 bg-slate-900/80 p-4">
-                  <p className="text-sm uppercase tracking-[0.2em] text-slate-500">Route preview</p>
-                  <div className="mt-4 h-72 overflow-hidden rounded-3xl bg-slate-950">
-                    {mapSrc ? (
-                      <iframe
-                        title={`route-${apt.id}`}
-                        src={mapSrc}
-                        className="h-full w-full border-0"
-                        allowFullScreen
-                      />
-                    ) : (
-                      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center text-slate-300">
-                        <p className="text-lg font-semibold">Google Maps API key is missing.</p>
-                        <p className="text-sm text-slate-400">
-                          Add `VITE_GOOGLE_MAPS_API_KEY` to your frontend `.env` to show live route directions.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-slate-700/80 bg-slate-900/80 p-5">
-                  <p className="text-sm uppercase tracking-[0.2em] text-slate-500">Quick notes</p>
-                  <ul className="mt-3 space-y-2 text-slate-300">
-                    <li>• Live route uses Google Maps directions embed.</li>
-                    <li>• Distance is calculated with a geo formula for fast previews.</li>
-                    <li>• Disease image updates based on your appointment condition.</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      }),
-    [appointments]
-  );
+    return matchesStatus && matchesSearch;
+  });
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-800 to-gray-900 flex items-center justify-center">
-        <div className="text-white text-2xl">Loading appointments...</div>
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-white text-2xl font-semibold">Loading appointments...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-slate-100">
-      <div className="sticky top-0 z-50 border-b border-slate-700/60 bg-slate-950/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-5 md:flex-row md:items-center md:justify-between md:px-10">
+    <div className="min-h-screen w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-slate-100 p-4 md:p-8">
+      {/* Header */}
+      <div className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800 py-4 mb-8 -mx-4 px-4 md:-mx-8 md:px-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">CareBridge Navigator</p>
-            <h1 className="mt-2 text-4xl font-semibold text-white">Your appointments with live route preview</h1>
+            <p className="text-xs uppercase tracking-[0.3em] text-cyan-400">CareBridge Dashboard</p>
+            <h1 className="text-3xl font-bold text-white mt-1">Appointment History & Lifecycle</h1>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="flex gap-3 items-center">
+            <NotificationBell liveEvent={lastEvent} />
             <Button
               onClick={() => navigate("/dashboard")}
-              className="bg-slate-700 hover:bg-slate-600 text-white font-medium px-6 py-2 rounded-2xl"
+              className="bg-slate-800 hover:bg-slate-700 text-white font-medium px-6 py-2 rounded-2xl border border-slate-700"
             >
               Back to Dashboard
             </Button>
             <Button
               onClick={handleLogout}
-              className="bg-rose-600 hover:bg-rose-500 text-white font-medium px-6 py-2 rounded-2xl"
+              className="bg-red-600 hover:bg-red-500 text-white font-medium px-6 py-2 rounded-2xl"
             >
               Logout
             </Button>
@@ -329,40 +274,143 @@ function PatientAppointments() {
         </div>
       </div>
 
-      <main className="mx-auto max-w-7xl px-6 py-10 sm:px-10">
-        <div className="mb-10 rounded-4xl border border-slate-700/70 bg-slate-950/80 p-8 shadow-2xl shadow-slate-950/20">
-          <div className="grid gap-6 lg:grid-cols-[1.5fr_0.9fr]">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Search & Filter Card */}
+        <Card className="bg-slate-900/60 border border-slate-800 p-6 rounded-3xl backdrop-blur-xl">
+          <div className="grid gap-6 md:grid-cols-[1.5fr_1fr] items-end">
             <div>
-              <h2 className="text-3xl font-semibold text-white">Smart appointments with maps</h2>
-              <p className="mt-4 max-w-2xl text-slate-400">
-                See the estimated travel distance to your hospital, visualize the route, and explore dynamic disease insights in a beautifully redesigned appointments page.
-              </p>
+              <label htmlFor="search" className="block text-sm font-semibold text-slate-300 mb-2">
+                🔍 Search Appointments
+              </label>
+              <input
+                id="search"
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by ID, hospital, specialist, disease or reason..."
+                className="w-full rounded-2xl border border-slate-700 bg-slate-800/80 px-4 py-3 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-500"
+              />
             </div>
-            <div className="rounded-3xl border border-slate-700/80 bg-slate-900/80 p-6">
-              <p className="text-sm uppercase tracking-[0.2em] text-cyan-300">Need a Google Maps API key?</p>
-              <p className="mt-3 text-slate-300">
-                Create a free Google Cloud project, enable Maps Embed API, and paste your API key into <code className="rounded bg-slate-800 px-1.5 py-0.5 text-sm text-cyan-200">VITE_GOOGLE_MAPS_API_KEY</code> in the frontend `.env` file.
-              </p>
-              <p className="mt-4 text-sm text-slate-400">The free Google Maps credit is usually enough for development and low-volume testing.</p>
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs text-slate-400 w-full mb-1 font-semibold">Filter by Status</span>
+              {["ALL", "PENDING", "ACCEPTED", "REJECTED", "COMPLETED", "CANCELLED", "RESCHEDULED"].map(statusVal => (
+                <button
+                  key={statusVal}
+                  onClick={() => setFilter(statusVal)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                    filter === statusVal
+                      ? "bg-indigo-600 text-white border-indigo-500"
+                      : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+                  }`}
+                >
+                  {statusVal}
+                </button>
+              ))}
             </div>
           </div>
-        </div>
+        </Card>
 
-        {appointments.length === 0 ? (
-          <div className="rounded-4xl border border-slate-700/70 bg-slate-900/80 p-12 text-center text-slate-300">
-            <p className="text-xl text-white">No appointments yet.</p>
-            <p className="mt-3 text-slate-400">Book an appointment from the dashboard to see route previews and disease visuals.</p>
-            <Button
-              onClick={() => navigate("/dashboard")}
-              className="mt-8 bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-8 py-3 rounded-2xl"
-            >
-              Browse Hospitals
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-6">{appointmentCards}</div>
-        )}
-      </main>
+        {/* Appointments List */}
+        <div className="space-y-4">
+          {filteredAppointments.length === 0 ? (
+            <div className="rounded-3xl border border-slate-800 bg-slate-900/40 p-12 text-center text-slate-400">
+              <p className="text-lg text-white font-semibold">No appointments found</p>
+              <p className="mt-2 text-slate-400">Try adjusting your filters or search text, or book a new appointment.</p>
+              <Button
+                onClick={() => navigate("/dashboard")}
+                className="mt-6 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-8 py-2.5 rounded-2xl"
+              >
+                Book Appointment
+              </Button>
+            </div>
+          ) : (
+            filteredAppointments.map(apt => {
+              const hospital = getHospitalLocation(apt.hospitalEmail);
+              return (
+                <Card key={apt.id} className="bg-slate-900/60 border border-slate-800 rounded-3xl overflow-hidden hover:border-slate-700 transition duration-300">
+                  <CardContent className="p-6 md:p-8 space-y-6">
+                    {/* Top Row: ID, Disease, Status */}
+                    <div className="flex flex-wrap justify-between items-center gap-4 border-b border-slate-800 pb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-500">ID: #{apt.id}</span>
+                          <span className="text-xs text-slate-500">|</span>
+                          <span className="text-xs text-slate-400">Requested: {formatTimestamp(apt.requestedAt)}</span>
+                        </div>
+                        <h3 className="text-2xl font-bold text-white mt-1">{apt.disease}</h3>
+                        <p className="text-xs text-indigo-400 font-semibold">{apt.specialization || "General Medicine"}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`px-4 py-1 rounded-full text-xs font-bold ${getStatusBadge(apt.status)}`}>
+                          {apt.status.toUpperCase()}
+                        </span>
+                        <Link to={`/appointments/${apt.id}`}>
+                          <Button className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-1.5 rounded-xl border border-indigo-500 shadow-md">
+                            View Details
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+
+                    {/* Middle Row: Patient, Doctor, Hospital Info */}
+                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Hospital Suggestion</p>
+                        <p className="text-sm font-bold text-white mt-1">{hospital.name}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{apt.hospitalEmail}</p>
+                        {apt.hospitalDistanceKm != null && (
+                          <span className="inline-block mt-2 text-xs bg-purple-500/10 text-purple-300 border border-purple-500/20 px-2 py-0.5 rounded-md font-semibold">
+                            📍 {apt.hospitalDistanceKm.toFixed(1)} km away
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Recommended Specialist</p>
+                        <p className="text-sm font-bold text-white mt-1">{apt.therapistEmail ? "Specialist Doctor" : "None Assigned"}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{apt.therapistEmail}</p>
+                        {apt.therapistDistanceKm != null && (
+                          <span className="inline-block mt-2 text-xs bg-green-500/10 text-green-300 border border-green-500/20 px-2 py-0.5 rounded-md font-semibold">
+                            📍 {apt.therapistDistanceKm.toFixed(1)} km away
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Schedule Time</p>
+                        <p className="text-sm font-bold text-white mt-1">📅 {formatDate(apt.appointmentDate)}</p>
+                        <p className="text-sm text-slate-300 mt-0.5">⏰ {formatTime(apt.appointmentTime)}</p>
+                        {/* Countdown for accepted upcoming appointments */}
+                        {apt.status.toUpperCase() === "ACCEPTED" && apt.appointmentDate && apt.appointmentTime && (() => {
+                          const dtStr = `${apt.appointmentDate}T${apt.appointmentTime}`;
+                          // Inline countdown display using a small sub-component
+                          return <AptCountdown dateTimeStr={dtStr} />;
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Visit Reason, Notes, and Timestamps */}
+                    <div className="bg-slate-800/40 rounded-2xl p-4 border border-slate-800/60 grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400">Reason for Visit</p>
+                        <p className="text-sm text-slate-200 mt-1">{apt.reasonForVisit || "Not specified"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400">Notes</p>
+                        <p className="text-sm text-slate-300 mt-1 italic">{apt.notes ? `"${apt.notes}"` : "None"}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs text-slate-500 pt-2 border-t border-slate-800/60">
+                      <span>Last Updated: {formatTimestamp(apt.updatedAt)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+        </div>
+      </div>
     </div>
   );
 }

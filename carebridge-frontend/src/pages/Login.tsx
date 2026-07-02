@@ -1,4 +1,4 @@
-﻿import { useState, type ChangeEvent } from "react";
+import { useState, useEffect, type ChangeEvent } from "react";
 import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -55,11 +55,27 @@ function Login() {
         password,
       });
 
-      localStorage.setItem("token", res.data.token);
-      localStorage.setItem("userRole", role);
+      const token = res.data.token;
+      localStorage.setItem("token", token);
       localStorage.setItem("userEmail", email);
 
-      const destination = role === "THERAPIST" ? "/therapist-dashboard" : role === "HOSPITAL" ? "/hospital-dashboard" : "/dashboard";
+      // Automatically extract actual role from token if present, fallback to selected role
+      let actualRole = role;
+      try {
+        const payloadBase64 = token.split(".")[1];
+        if (payloadBase64) {
+          const payloadJson = JSON.parse(atob(payloadBase64));
+          if (payloadJson.role) {
+            actualRole = payloadJson.role;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to decode token payload:", err);
+      }
+
+      localStorage.setItem("userRole", actualRole);
+
+      const destination = actualRole === "THERAPIST" ? "/therapist-dashboard" : actualRole === "HOSPITAL" ? "/hospital-dashboard" : "/dashboard";
       navigate(destination);
     } catch (err: any) {
       const errorMsg = err.response?.data?.message || "Login failed!";
@@ -72,6 +88,75 @@ function Login() {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleLogin();
   };
+
+  const handleGoogleLoginResponse = async (response: any) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await axios.post("http://localhost:8080/api/auth/google", {
+        idToken: response.credential,
+        role: role,
+      });
+
+      const token = res.data.token;
+      localStorage.setItem("token", token);
+      
+      let actualEmail = email;
+      let actualRole = role;
+      try {
+        const payloadBase64 = token.split(".")[1];
+        if (payloadBase64) {
+          const payloadJson = JSON.parse(atob(payloadBase64));
+          if (payloadJson.sub) {
+            actualEmail = payloadJson.sub;
+          }
+          if (payloadJson.role) {
+            actualRole = payloadJson.role;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to decode token payload:", err);
+      }
+
+      localStorage.setItem("userEmail", actualEmail);
+      localStorage.setItem("userRole", actualRole);
+
+      const destination = actualRole === "THERAPIST" ? "/therapist-dashboard" : actualRole === "HOSPITAL" ? "/hospital-dashboard" : "/dashboard";
+      navigate(destination);
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Google authentication failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Render Google Login Button dynamically
+  useEffect(() => {
+    const initGoogle = () => {
+      const google = (window as any).google;
+      if (google && google.accounts) {
+        google.accounts.id.initialize({
+          client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || "782957200-example.apps.googleusercontent.com",
+          callback: handleGoogleLoginResponse,
+        });
+        google.accounts.id.renderButton(
+          document.getElementById("google-signin-btn"),
+          { theme: "outline", size: "large", width: "100%", text: "continue_with" }
+        );
+        return true;
+      }
+      return false;
+    };
+
+    if (!initGoogle()) {
+      const interval = setInterval(() => {
+        if (initGoogle()) {
+          clearInterval(interval);
+        }
+      }, 500);
+      return () => clearInterval(interval);
+    }
+  }, [role]);
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -148,6 +233,14 @@ function Login() {
             <Button type="button" onClick={handleLogin} disabled={loading} variant="hero" className="w-full" size="lg">
               {loading ? "Signing in..." : "Log In"}
             </Button>
+
+            <div className="relative my-4 flex py-2 items-center">
+              <div className="flex-grow border-t border-slate-700/50"></div>
+              <span className="flex-shrink mx-4 text-xs font-semibold text-muted-foreground uppercase">or continue with</span>
+              <div className="flex-grow border-t border-slate-700/50"></div>
+            </div>
+
+            <div id="google-signin-btn" className="w-full flex justify-center"></div>
           </div>
 
           {/* Register Link */}

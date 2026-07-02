@@ -4,6 +4,7 @@ import com.carebridge.entity.Hospital;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -12,4 +13,6 @@ public interface HospitalRepository extends JpaRepository<Hospital, Long> {
     Optional<Hospital> findTopBySpecializationIgnoreCaseOrderByRatingDesc(String specialization);
     Optional<Hospital> findTopBySpecializationContainingIgnoreCaseOrderByRatingDesc(String specialization);
     Optional<Hospital> findByEmail(String email);
+    List<Hospital> findBySpecializationContainingIgnoreCase(String specialization);
+    List<Hospital> findAllBySpecializationContainingIgnoreCase(String specialization);
 }

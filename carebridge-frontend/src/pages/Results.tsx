@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { BookingModal } from "@/components/BookingModal";
 import { useLocation, Link } from "react-router-dom";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import L from "leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 
 const calculateDistanceKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
   const toRad = (value: number) => (value * Math.PI) / 180;
@@ -18,76 +22,269 @@ const calculateDistanceKm = (lat1: number, lng1: number, lat2: number, lng2: num
   return 6371 * c;
 };
 
+// Custom SVG icon generator for leaflet markers
+const createSVGIcon = (color: string) => {
+  return new L.DivIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="32" height="32" style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.45));">
+             <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+           </svg>`,
+    className: "custom-leaflet-icon",
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32],
+  });
+};
+
+const patientIcon = createSVGIcon("#3b82f6");   // Blue
+const therapistIcon = createSVGIcon("#22c55e"); // Green
+const hospitalIcon = createSVGIcon("#a855f7");  // Purple
+
+// Helper component to auto-fit map view to contain all loaded markers
+const FitMapBounds = ({ points }: { points: [number, number][] }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (points.length > 0) {
+      const bounds = L.latLngBounds(points);
+      map.fitBounds(bounds, { padding: [50, 50] });
+    }
+  }, [points, map]);
+  return null;
+};
+
+interface RouteMapProps {
+  patientCoords: [number, number];
+  therapistCoords?: [number, number] | null;
+  hospitalCoords?: [number, number] | null;
+  therapistName?: string;
+  hospitalName?: string;
+  patientName?: string;
+  height?: string;
+}
+
+const RouteMap = ({
+  patientCoords,
+  therapistCoords,
+  hospitalCoords,
+  therapistName = "Specialist",
+  hospitalName = "Hospital",
+  patientName = "You",
+  height = "320px",
+}: RouteMapProps) => {
+  const points: [number, number][] = [patientCoords];
+  if (hospitalCoords) points.push(hospitalCoords);
+  if (therapistCoords) points.push(therapistCoords);
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-950 z-0 relative" style={{ height }}>
+      <MapContainer
+        center={patientCoords}
+        zoom={13}
+        style={{ height: "100%", width: "100%" }}
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <FitMapBounds points={points} />
+        
+        {/* Patient Marker */}
+        <Marker position={patientCoords} icon={patientIcon}>
+          <Popup>
+            <div className="text-slate-800 font-semibold">{patientName} (Your Location)</div>
+          </Popup>
+        </Marker>
+
+        {/* Hospital Marker */}
+        {hospitalCoords && (
+          <Marker position={hospitalCoords} icon={hospitalIcon}>
+            <Popup>
+              <div className="text-slate-800 font-semibold">{hospitalName}</div>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* Therapist Marker */}
+        {therapistCoords && (
+          <Marker position={therapistCoords} icon={therapistIcon}>
+            <Popup>
+              <div className="text-slate-800 font-semibold">{therapistName}</div>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* Polyline Path Route */}
+        <Polyline positions={points} color="#6366f1" weight={4} opacity={0.8} dashArray="8, 8" />
+      </MapContainer>
+    </div>
+  );
+};
+
 function Results() {
   const location = useLocation();
-  const result = location.state as any;
-  const googleMapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const [result, setResult] = useState<any>(location.state as any);
+  const [loading, setLoading] = useState<boolean>(!location.state);
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
   const [requestLoading, setRequestLoading] = useState(false);
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  // Track which provider the patient is booking with
+  const [bookingProviderType, setBookingProviderType] = useState<'THERAPIST' | 'HOSPITAL' | null>(null);
+  const [bookingProviderId, setBookingProviderId] = useState<number | null>(null);
+  const [bookingProviderName, setBookingProviderName] = useState<string>("");
+
+  // Resolve therapist and hospital IDs dynamically
+  const [resolvedTherapistId, setResolvedTherapistId] = useState<number | null>(null);
+  const [resolvedHospitalId, setResolvedHospitalId] = useState<number | null>(null);
+  const [resolvedTherapistCoords, setResolvedTherapistCoords] = useState<[number, number] | null>(null);
+  const [resolvedHospitalCoords, setResolvedHospitalCoords] = useState<[number, number] | null>(null);
+  const [resolvedHospitalAddress, setResolvedHospitalAddress] = useState<string>("");
+
+  useEffect(() => {
+    if (result) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchLatestHistory = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+        // 1. Fetch latest history record
+        const historyRes = await axios.get("http://localhost:8080/api/history/my-latest", { headers });
+        const historyData = historyRes.data;
+
+        if (!historyData || !historyData.disease) {
+          setLoading(false);
+          return;
+        }
+
+        // 2. Fetch authenticated user profile to get patient coordinates
+        const userRes = await axios.get("http://localhost:8080/api/auth/me", { headers });
+        const userData = userRes.data;
+
+        setResult({
+          disease: historyData.disease,
+          therapistName: historyData.therapistName,
+          hospitalSuggestion: historyData.hospitalSuggestion,
+          patientLatitude: userData.latitude,
+          patientLongitude: userData.longitude,
+          location: userData.location || "Your Location",
+        });
+      } catch (err) {
+        console.error("Error loading latest assessment history:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLatestHistory();
+  }, [location.state]);
+
+  useEffect(() => {
+    if (!result) return;
+
+    const resolveIds = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+        if (result.therapistName) {
+          const doctorRes = await axios.get("http://localhost:8080/api/therapist", { headers });
+          const matchedDoctor = doctorRes.data.find(
+            (doc: any) => doc.name.toLowerCase() === result.therapistName.toLowerCase()
+          );
+          if (matchedDoctor) {
+            setResolvedTherapistId(matchedDoctor.id);
+            if (matchedDoctor.latitude != null && matchedDoctor.longitude != null) {
+              setResolvedTherapistCoords([matchedDoctor.latitude, matchedDoctor.longitude]);
+            }
+          }
+        }
+
+        if (result.hospitalSuggestion) {
+          const hospitalRes = await axios.get("http://localhost:8080/api/hospital", { headers });
+          const matchedHospital = hospitalRes.data.find(
+            (hosp: any) => hosp.name.toLowerCase() === result.hospitalSuggestion.toLowerCase()
+          );
+          if (matchedHospital) {
+            setResolvedHospitalId(matchedHospital.id);
+            if (matchedHospital.latitude != null && matchedHospital.longitude != null) {
+              setResolvedHospitalCoords([matchedHospital.latitude, matchedHospital.longitude]);
+            }
+            if (matchedHospital.location) {
+              setResolvedHospitalAddress(matchedHospital.location);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error resolving provider IDs:", err);
+      }
+    };
+
+    resolveIds();
+  }, [result]);
 
   const hasPatientCoords =
     result &&
     result.patientLatitude != null &&
     result.patientLongitude != null;
 
-  const hasTherapistCoords =
-    result &&
-    result.therapistLatitude != null &&
-    result.therapistLongitude != null;
+  const therapistLatitude = result?.therapistLatitude ?? resolvedTherapistCoords?.[0] ?? null;
+  const therapistLongitude = result?.therapistLongitude ?? resolvedTherapistCoords?.[1] ?? null;
+  const hospitalLatitude = result?.hospitalLatitude ?? resolvedHospitalCoords?.[0] ?? null;
+  const hospitalLongitude = result?.hospitalLongitude ?? resolvedHospitalCoords?.[1] ?? null;
+  const hospitalAddress = result?.hospitalAddress || resolvedHospitalAddress || "";
 
-  const hasHospitalCoords =
-    result &&
-    result.hospitalLatitude != null &&
-    result.hospitalLongitude != null;
+  const hasTherapistCoords = therapistLatitude != null && therapistLongitude != null;
+  const hasHospitalCoords = hospitalLatitude != null && hospitalLongitude != null;
 
   // Check route availability for both therapist and hospital
   const hasTherapistRoute = hasPatientCoords && hasTherapistCoords;
 
   const hasHospitalRoute = hasPatientCoords && hasHospitalCoords;
 
-  // Calculate distances
-  const therapistDistanceKm = hasTherapistRoute
-    ? calculateDistanceKm(
-        result.patientLatitude,
-        result.patientLongitude,
-        result.therapistLatitude,
-        result.therapistLongitude
-      )
-    : null;
-
-  const hospitalDistanceKm = hasHospitalRoute
-    ? calculateDistanceKm(
-        result.patientLatitude,
-        result.patientLongitude,
-        result.hospitalLatitude,
-        result.hospitalLongitude
-      )
-    : null;
+  // Calculate distances (using backend values where possible)
+  const therapistDistanceKm = result?.therapistDistanceKm ?? (
+    (hasPatientCoords && hasTherapistCoords)
+      ? calculateDistanceKm(result.patientLatitude, result.patientLongitude, therapistLatitude, therapistLongitude)
+      : null
+  );
+  const hospitalDistanceKm = result?.hospitalDistanceKm ?? (
+    (hasPatientCoords && hasHospitalCoords)
+      ? calculateDistanceKm(result.patientLatitude, result.patientLongitude, hospitalLatitude, hospitalLongitude)
+      : null
+  );
 
   const therapistHospitalDistanceKm = hasTherapistCoords && hasHospitalCoords
     ? calculateDistanceKm(
-        result.therapistLatitude,
-        result.therapistLongitude,
-        result.hospitalLatitude,
-        result.hospitalLongitude
+        therapistLatitude,
+        therapistLongitude,
+        hospitalLatitude,
+        hospitalLongitude
       )
     : null;
 
-  // Generate route URLs
-  const therapistRouteUrl = hasTherapistRoute && googleMapsKey
-    ? `https://www.google.com/maps/embed/v1/directions?key=${googleMapsKey}&origin=${result.patientLatitude},${result.patientLongitude}&destination=${result.therapistLatitude},${result.therapistLongitude}&mode=driving`
-    : "";
+  const hasCombinedRoute = hasTherapistRoute && hasHospitalRoute;
 
-  const hospitalRouteUrl = hasHospitalRoute && googleMapsKey
-    ? `https://www.google.com/maps/embed/v1/directions?key=${googleMapsKey}&origin=${result.patientLatitude},${result.patientLongitude}&destination=${result.hospitalLatitude},${result.hospitalLongitude}&mode=driving`
-    : "";
+  const handleRequestAppointment = (providerType: 'THERAPIST' | 'HOSPITAL') => {
+    setBookingProviderType(providerType);
+    if (providerType === 'THERAPIST') {
+      setBookingProviderId(resolvedTherapistId);
+      setBookingProviderName(result?.therapistName ?? "");
+    } else {
+      setBookingProviderId(resolvedHospitalId);
+      setBookingProviderName(result?.hospitalSuggestion ?? "");
+    }
+    setIsBookingModalOpen(true);
+  };
 
-  // Combined route URL for both destinations (if both available)
-  const combinedRouteUrl = (hasTherapistRoute && hasHospitalRoute && googleMapsKey)
-    ? `https://www.google.com/maps/embed/v1/directions?key=${googleMapsKey}&origin=${result.patientLatitude},${result.patientLongitude}&destination=${result.therapistLatitude},${result.therapistLongitude}&waypoints=${result.hospitalLatitude},${result.hospitalLongitude}&mode=driving`
-    : "";
-
-  const handleRequestAppointment = async () => {
+  const handleConfirmBooking = async (bookingData: {
+    appointmentDate: string;
+    appointmentTime: string;
+    reasonForVisit: string;
+    notes: string;
+    slotId: number | null;
+  }) => {
     if (!result) return;
     const patientEmail = localStorage.getItem("userEmail");
     if (!patientEmail) {
@@ -99,26 +296,43 @@ function Results() {
     setRequestStatus(null);
 
     try {
-      await axios.post("http://localhost:8080/api/appointments/request", {
+      await axios.post("http://localhost:8080/api/appointments/book", {
         patientEmail,
         disease: result.disease,
-        message: `Follow-up requested for ${result.disease}. Please connect me with a specialist.`,
+        message: bookingData.reasonForVisit,
         specialization: result.disease,
-        therapistQuery: result.therapistName,
-        hospitalQuery: result.hospitalSuggestion,
+        therapistQuery: bookingProviderType === 'THERAPIST' ? result.therapistName : undefined,
+        hospitalQuery: bookingProviderType === 'HOSPITAL' ? result.hospitalSuggestion : undefined,
+        therapistId: bookingProviderType === 'THERAPIST' ? bookingProviderId : undefined,
+        hospitalId: bookingProviderType === 'HOSPITAL' ? bookingProviderId : undefined,
+        appointmentDate: bookingData.appointmentDate,
+        appointmentTime: bookingData.appointmentTime,
+        reasonForVisit: bookingData.reasonForVisit,
+        notes: bookingData.notes,
+        slotId: bookingData.slotId,
       }, {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
       });
 
-      setRequestStatus("Appointment request submitted successfully. Check your hospital or therapist dashboard for updates.");
+      setRequestStatus("Appointment request submitted successfully. Check your appointments page for status updates.");
     } catch (error: any) {
       console.error(error);
       const message = error?.response?.data?.message || error?.message || "Unable to submit appointment request. Please try again later.";
       setRequestStatus(`Unable to submit appointment request: ${message}`);
+      throw error; // Re-throw so BookingModal can display the error inline
     } finally {
       setRequestLoading(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-green-50 via-blue-50 to-purple-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
+        <p className="mt-4 text-indigo-900 font-semibold text-center px-4">Loading latest assessment results...</p>
+      </div>
+    );
+  }
 
   if (!result) {
     return (
@@ -242,7 +456,7 @@ function Results() {
                 <div className="text-lg font-semibold mb-2">{result.therapistName}</div>
                 <p className="text-green-100 text-sm">This specialist has expertise in treating {result.disease.toLowerCase()} and similar conditions.</p>
                 {therapistDistanceKm != null && (
-                  <p className="text-green-50 text-sm mt-2 font-medium">Distance from you: {therapistDistanceKm.toFixed(1)} km</p>
+                  <p className="text-green-50 text-sm mt-2 font-medium">Distance: {therapistDistanceKm.toFixed(1)} km away</p>
                 )}
               </CardContent>
             </Card>
@@ -268,7 +482,7 @@ function Results() {
                 <div className="text-lg font-semibold mb-2">{result.hospitalSuggestion}</div>
                 <p className="text-purple-100 text-sm">This facility specializes in {result.disease.toLowerCase()} treatment and has excellent patient care ratings.</p>
                 {hospitalDistanceKm != null && (
-                  <p className="text-purple-50 text-sm mt-2 font-medium">Distance from you: {hospitalDistanceKm.toFixed(1)} km</p>
+                  <p className="text-purple-50 text-sm mt-2 font-medium">Distance: {hospitalDistanceKm.toFixed(1)} km away</p>
                 )}
               </CardContent>
             </Card>
@@ -343,7 +557,7 @@ function Results() {
                         <p className="text-sm uppercase tracking-[0.2em] text-green-300">Specialist Location</p>
                         <p className="mt-2 text-lg font-semibold text-white">{result.therapistName}</p>
                         <p className="mt-1 text-sm text-green-200">
-                          {therapistDistanceKm != null && `Distance: ${therapistDistanceKm.toFixed(1)} km`}
+                          {therapistDistanceKm != null && `Distance: ${therapistDistanceKm.toFixed(1)} km away`}
                         </p>
                       </div>
                     )}
@@ -353,9 +567,9 @@ function Results() {
                         <p className="text-sm uppercase tracking-[0.2em] text-purple-300">Hospital Location</p>
                         <p className="mt-2 text-lg font-semibold text-white">{result.hospitalSuggestion}</p>
                         <p className="mt-1 text-sm text-purple-200">
-                          {result.hospitalAddress || "Hospital coordinates available"}
+                          {hospitalAddress || "Hospital coordinates available"}
                           {hospitalDistanceKm != null && <br />}
-                          {hospitalDistanceKm != null && `Distance: ${hospitalDistanceKm.toFixed(1)} km`}
+                          {hospitalDistanceKm != null && `Distance: ${hospitalDistanceKm.toFixed(1)} km away`}
                         </p>
                       </div>
                     )}
@@ -364,33 +578,37 @@ function Results() {
                   {/* Map Display */}
                   <div className="space-y-4">
                     {/* Combined Route (Both Therapist and Hospital) */}
-                    {combinedRouteUrl && (
+                    {hasCombinedRoute && (
                       <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-950">
                         <div className="bg-gradient-to-r from-green-500/20 to-purple-500/20 p-3 border-b border-white/10">
-                          <p className="text-sm font-semibold text-white">Combined Route: Specialist → Hospital</p>
+                          <p className="text-sm font-semibold text-white">Combined Route: Patient → Hospital → Specialist</p>
                         </div>
-                        <iframe
-                          title="Combined healthcare route"
-                          src={combinedRouteUrl}
-                          className="h-80 w-full border-0"
-                          loading="lazy"
+                        <RouteMap
+                          patientCoords={[result.patientLatitude, result.patientLongitude]}
+                          therapistCoords={[therapistLatitude, therapistLongitude]}
+                          hospitalCoords={[hospitalLatitude, hospitalLongitude]}
+                          therapistName={result.therapistName}
+                          hospitalName={result.hospitalSuggestion}
+                          patientName={result.location || "You"}
+                          height="320px"
                         />
                       </div>
                     )}
 
                     {/* Individual Routes (if not showing combined) */}
-                    {!combinedRouteUrl && (
+                    {!hasCombinedRoute && (
                       <div className="grid gap-4 lg:grid-cols-2">
                         {hasTherapistRoute && (
                           <div className="overflow-hidden rounded-3xl border border-green-500/30 bg-green-500/5">
                             <div className="bg-gradient-to-r from-green-500/20 p-3 border-b border-green-500/20">
                               <p className="text-sm font-semibold text-green-200">Route to Specialist</p>
                             </div>
-                            <iframe
-                              title="Specialist route"
-                              src={therapistRouteUrl}
-                              className="h-64 w-full border-0"
-                              loading="lazy"
+                            <RouteMap
+                              patientCoords={[result.patientLatitude, result.patientLongitude]}
+                              therapistCoords={[therapistLatitude, therapistLongitude]}
+                              therapistName={result.therapistName}
+                              patientName={result.location || "You"}
+                              height="256px"
                             />
                           </div>
                         )}
@@ -400,11 +618,12 @@ function Results() {
                             <div className="bg-gradient-to-r from-purple-500/20 p-3 border-b border-purple-500/20">
                               <p className="text-sm font-semibold text-purple-200">Route to Hospital</p>
                             </div>
-                            <iframe
-                              title="Hospital route"
-                              src={hospitalRouteUrl}
-                              className="h-64 w-full border-0"
-                              loading="lazy"
+                            <RouteMap
+                              patientCoords={[result.patientLatitude, result.patientLongitude]}
+                              hospitalCoords={[hospitalLatitude, hospitalLongitude]}
+                              hospitalName={result.hospitalSuggestion}
+                              patientName={result.location || "You"}
+                              height="256px"
                             />
                           </div>
                         )}
@@ -414,9 +633,7 @@ function Results() {
                     {/* No Route Available */}
                     {!hasTherapistRoute && !hasHospitalRoute && (
                       <div className="p-8 text-center text-sm text-slate-300 bg-slate-800/50 rounded-3xl">
-                        {googleMapsKey
-                          ? "Unable to load route preview. Please refresh the page."
-                          : "Add VITE_GOOGLE_MAPS_API_KEY to .env to display route maps."}
+                        No route coordinates available to display maps.
                       </div>
                     )}
                   </div>
@@ -487,13 +704,26 @@ function Results() {
             </Button>
           </Link>
           {localStorage.getItem("userRole") === "PATIENT" && (
-            <Button
-              onClick={handleRequestAppointment}
-              disabled={requestLoading}
-              className="flex-1 w-full h-14 text-lg font-semibold bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl shadow-lg transition-all duration-300"
-            >
-              {requestLoading ? "Requesting..." : "Request Appointment"}
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-3 w-full">
+              {result.therapistName && (
+                <Button
+                  onClick={() => handleRequestAppointment('THERAPIST')}
+                  disabled={requestLoading}
+                  className="flex-1 h-14 text-sm font-semibold bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl shadow-lg transition-all duration-300"
+                >
+                  📋 Book with Dr. {result.therapistName}
+                </Button>
+              )}
+              {result.hospitalSuggestion && (
+                <Button
+                  onClick={() => handleRequestAppointment('HOSPITAL')}
+                  disabled={requestLoading}
+                  className="flex-1 h-14 text-sm font-semibold bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl shadow-lg transition-all duration-300"
+                >
+                  🏥 Book at {result.hospitalSuggestion}
+                </Button>
+              )}
+            </div>
           )}
         </div>
         {requestStatus && (
@@ -510,6 +740,14 @@ function Results() {
           </p>
         </div>
       </div>
+      <BookingModal
+        isOpen={isBookingModalOpen}
+        onClose={() => setIsBookingModalOpen(false)}
+        onSubmit={handleConfirmBooking}
+        providerName={bookingProviderName || `${result.therapistName} & ${result.hospitalSuggestion}`}
+        providerId={bookingProviderId}
+        providerType={bookingProviderType}
+      />
     </div>
   );
 }

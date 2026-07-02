@@ -4,7 +4,6 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
-
 import javax.crypto.SecretKey;
 import java.security.Key;
 import java.util.Date;
@@ -19,16 +18,23 @@ public class JwtUtil {
     // ⏱ token validity (24 hours)
     private static final long JWT_EXPIRATION = 1000 * 60 * 60 * 24;
 
-    // ==============================
     // 🔑 Signing key generator
-    // ==============================
     private Key getSigningKey() {
         return Keys.hmacShaKeyFor(SECRET.getBytes());
     }
 
-    // ==============================
-    // ✅ Generate JWT
-    // ==============================
+    //  Generate JWT with role claim
+    public String generateToken(String username, String role) {
+        return Jwts.builder()
+                .subject(username) // 👈 who is the user
+                .claim("role", role) // 👈 user's role
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + JWT_EXPIRATION))
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    //  Generate JWT
     public String generateToken(String username) {
         return Jwts.builder()
                 .subject(username) // 👈 who is the user
@@ -38,16 +44,12 @@ public class JwtUtil {
                 .compact();
     }
 
-    // ==============================
-    // ✅ Extract username from JWT
-    // ==============================
+    //  Extract username from JWT
     public String extractUsername(String token) {
         return extractAllClaims(token).getSubject();
     }
 
-    // ==============================
-    // ✅ Validate JWT (VERY IMPORTANT)
-    // ==============================
+    //  Validate JWT (VERY IMPORTANT)
     public boolean validateToken(String token, String username) {
         final String extractedUsername = extractUsername(token);
 
@@ -55,18 +57,14 @@ public class JwtUtil {
                 && !isTokenExpired(token);
     }
 
-    // ==============================
-    // ⛔ Check token expiry
-    // ==============================
+    //  Check token expiry
     private boolean isTokenExpired(String token) {
         return extractAllClaims(token)
                 .getExpiration()
                 .before(new Date());
     }
 
-    // ==============================
-    // 📦 Extract all claims
-    // ==============================
+    //  Extract all claims
     private Claims extractAllClaims(String token) {
         return Jwts.parser()
                 .verifyWith((SecretKey) getSigningKey())
