@@ -25,13 +25,18 @@ public class PredictionService {
     private String mlServiceBaseUrl;
 
     public PredictionResponse getPrediction(PredictionRequest request) {
+        String url = mlServiceBaseUrl;
+        if (url != null && url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        url = url + "/predict";
 
-        ResponseEntity<PredictionResponse> response =
-                restTemplate.postForEntity(
-                        mlServiceBaseUrl + "/predict",
-                        request,
-                        PredictionResponse.class
-                );
+        ResponseEntity<PredictionResponse> response;
+        try {
+            response = restTemplate.postForEntity(url, request, PredictionResponse.class);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to connect to Python ML Service at [" + url + "]: " + e.getMessage(), e);
+        }
 
         PredictionResponse result = response.getBody();
 

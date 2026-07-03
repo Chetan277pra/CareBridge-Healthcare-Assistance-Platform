@@ -151,8 +151,9 @@ function Assessment() {
       );
 
       navigate("/results", { state: res.data });
-    } catch (err) {
-      setFormError("Assessment failed. Please confirm your location and try again.");
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Please check your network and try again.";
+      setFormError(`Assessment failed: ${errorMsg}`);
       console.error(err);
     } finally {
       setLoading(false);
