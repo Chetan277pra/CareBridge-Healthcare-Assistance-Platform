@@ -1,6 +1,8 @@
-﻿import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import LocationPicker from "@/components/LocationPicker";
@@ -80,7 +82,7 @@ function Register() {
   });
 
   useEffect(() => {
-    axios.get("http://localhost:8080/api/hospital")
+    axios.get(`${API_BASE}/api/hospital`)
       .then((res) => {
         const data = Array.isArray(res.data) ? res.data : [];
         const options = data
@@ -154,7 +156,7 @@ function Register() {
       registerData.latitude = latitude;
       registerData.longitude = longitude;
 
-      await axios.post("http://localhost:8080/api/auth/register", registerData);
+      await axios.post(`${API_BASE}/api/auth/register`, registerData);
 
       navigate("/login");
     } catch (err: any) {

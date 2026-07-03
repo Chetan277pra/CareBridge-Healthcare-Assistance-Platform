@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+
 interface Notification {
   id: number;
   userId: number;
@@ -51,7 +53,7 @@ export function NotificationBell({ liveEvent }: NotificationBellProps) {
   const fetchUnread = async () => {
     if (!token) return;
     try {
-      const res = await axios.get<Notification[]>("http://localhost:8080/api/notifications/unread", {
+      const res = await axios.get<Notification[]>(`${API_BASE}/api/notifications/unread`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setNotifications(res.data.slice(0, 10));
@@ -79,7 +81,7 @@ export function NotificationBell({ liveEvent }: NotificationBellProps) {
     if (!token) return;
     if (!notif.isRead) {
       try {
-        await axios.put(`http://localhost:8080/api/notifications/${notif.id}/read`, {}, {
+        await axios.put(`${API_BASE}/api/notifications/${notif.id}/read`, {}, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, isRead: true } : n));
@@ -95,7 +97,7 @@ export function NotificationBell({ liveEvent }: NotificationBellProps) {
   const markAllRead = async () => {
     if (!token) return;
     try {
-      await axios.put("http://localhost:8080/api/notifications/read-all", {}, {
+      await axios.put(`${API_BASE}/api/notifications/read-all`, {}, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));

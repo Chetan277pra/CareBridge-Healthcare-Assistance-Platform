@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,8 +65,8 @@ export function BookingModal({
       const token = localStorage.getItem("token");
       const endpoint =
         providerType === "THERAPIST"
-          ? `http://localhost:8080/api/availability/therapist/${providerId}?date=${selectedDate}`
-          : `http://localhost:8080/api/availability/hospital/${providerId}?date=${selectedDate}`;
+          ? `${API_BASE}/api/availability/therapist/${providerId}?date=${selectedDate}`
+          : `${API_BASE}/api/availability/hospital/${providerId}?date=${selectedDate}`;
 
       const res = await axios.get(endpoint, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},

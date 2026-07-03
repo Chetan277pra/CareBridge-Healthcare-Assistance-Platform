@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 import { Button } from "@/components/ui/button";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useAppointmentSocket } from "@/hooks/useAppointmentSocket";
@@ -86,7 +88,7 @@ function HospitalDashboard() {
   const fetchStats = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get("http://localhost:8080/api/dashboard/hospital", {
+      const res = await axios.get(`${API_BASE}/api/dashboard/hospital`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setStats(res.data);
@@ -101,14 +103,14 @@ function HospitalDashboard() {
 
       // Fetch hospital profile
       const hospitalRes = await axios.get(
-        `http://localhost:8080/api/hospital/profile?email=${email}`,
+        `${API_BASE}/api/hospital/profile?email=${email}`,
         { headers }
       );
       setHospital(hospitalRes.data);
 
       // Fetch hospital appointment requests
       const requestsRes = await axios.get(
-        `http://localhost:8080/api/appointments/hospital?email=${email}`,
+        `${API_BASE}/api/appointments/hospital?email=${email}`,
         { headers }
       );
       setRequests(requestsRes.data.map((request: any) => ({
@@ -121,7 +123,7 @@ function HospitalDashboard() {
       })));
 
       // Fetch nearby doctors for hospital dashboard
-      const doctorsRes = await axios.get("http://localhost:8080/api/therapist", { headers });
+      const doctorsRes = await axios.get(`${API_BASE}/api/therapist`, { headers });
       setDoctors(doctorsRes.data.map((doctor: any) => ({
         id: doctor.id?.toString() ?? doctor.email,
         name: doctor.name,
@@ -172,7 +174,7 @@ function HospitalDashboard() {
   const handleAcceptRequest = async (id: string) => {
     try {
       await axios.put(
-        `http://localhost:8080/api/appointments/${id}/accept`,
+        `${API_BASE}/api/appointments/${id}/accept`,
         {},
         { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
       );
@@ -186,7 +188,7 @@ function HospitalDashboard() {
   const handleRejectRequest = async (id: string) => {
     try {
       await axios.put(
-        `http://localhost:8080/api/appointments/${id}/reject`,
+        `${API_BASE}/api/appointments/${id}/reject`,
         {},
         { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
       );
@@ -211,7 +213,7 @@ function HospitalDashboard() {
     try {
       const token = localStorage.getItem("token");
       const res = await axios.get(
-        `http://localhost:8080/api/availability/provider/slots?date=${date}`,
+        `${API_BASE}/api/availability/provider/slots?date=${date}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setAvailSlots(res.data || []);
@@ -223,7 +225,7 @@ function HospitalDashboard() {
     try {
       const token = localStorage.getItem("token");
       const res = await axios.get(
-        `http://localhost:8080/api/provider-leave/${hospital.id}?type=HOSPITAL`,
+        `${API_BASE}/api/provider-leave/${hospital.id}?type=HOSPITAL`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setLeaveList(res.data || []);
@@ -234,7 +236,7 @@ function HospitalDashboard() {
     try {
       const token = localStorage.getItem("token");
       const action = currentlyAvailable ? "disable" : "enable";
-      await axios.put(`http://localhost:8080/api/availability/slots/${slotId}/${action}`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.put(`${API_BASE}/api/availability/slots/${slotId}/${action}`, {}, { headers: { Authorization: `Bearer ${token}` } });
       setAvailSlots(prev => prev.map(s => s.id === slotId ? { ...s, available: !currentlyAvailable } : s));
       setAvailMsg(`Slot ${currentlyAvailable ? "disabled" : "enabled"} successfully.`);
       setTimeout(() => setAvailMsg(""), 3000);
@@ -245,7 +247,7 @@ function HospitalDashboard() {
     if (!leaveDate || !hospital?.id) return;
     try {
       const token = localStorage.getItem("token");
-      await axios.post(`http://localhost:8080/api/provider-leave`, { providerId: hospital.id, providerType: "HOSPITAL", leaveDate, reason: leaveReason }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${API_BASE}/api/provider-leave`, { providerId: hospital.id, providerType: "HOSPITAL", leaveDate, reason: leaveReason }, { headers: { Authorization: `Bearer ${token}` } });
       setLeaveDate(""); setLeaveReason("");
       setAvailMsg("Leave marked.");
       fetchLeaves(); fetchProviderSlots(availDate);
@@ -256,7 +258,7 @@ function HospitalDashboard() {
   const handleRemoveLeave = async (leaveId: number) => {
     try {
       const token = localStorage.getItem("token");
-      await axios.delete(`http://localhost:8080/api/provider-leave/${leaveId}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`${API_BASE}/api/provider-leave/${leaveId}`, { headers: { Authorization: `Bearer ${token}` } });
       setAvailMsg("Leave removed."); fetchLeaves(); fetchProviderSlots(availDate);
       setTimeout(() => setAvailMsg(""), 3000);
     } catch (err: any) { setAvailMsg(err?.response?.data?.message || "Failed."); setTimeout(() => setAvailMsg(""), 3000); }
@@ -280,7 +282,7 @@ function HospitalDashboard() {
     try {
       const email = localStorage.getItem("userEmail");
       const response = await axios.put(
-        `http://localhost:8080/api/hospital/profile?email=${email}`,
+        `${API_BASE}/api/hospital/profile?email=${email}`,
         {
           name: editForm.name,
           phone: editForm.phone,

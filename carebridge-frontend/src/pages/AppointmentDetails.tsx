@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAppointmentSocket } from "@/hooks/useAppointmentSocket";
@@ -119,7 +121,7 @@ export default function AppointmentDetails() {
 
     const fetchDetails = async () => {
       try {
-        const res = await axios.get(`http://localhost:8080/api/appointments/${id}`, {
+        const res = await axios.get(`${API_BASE}/api/appointments/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setApt(res.data);
@@ -139,12 +141,12 @@ export default function AppointmentDetails() {
     setActionLoading(true);
     try {
       await axios.put(
-        `http://localhost:8080/api/appointments/${id}/${endpoint}`,
+        `${API_BASE}/api/appointments/${id}/${endpoint}`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
       // Reload appointment details
-      const detailRes = await axios.get(`http://localhost:8080/api/appointments/${id}`, {
+      const detailRes = await axios.get(`${API_BASE}/api/appointments/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setApt(detailRes.data);

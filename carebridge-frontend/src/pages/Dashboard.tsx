@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { BookingModal } from "@/components/BookingModal";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import axios from "axios";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useAppointmentSocket } from "@/hooks/useAppointmentSocket";
 import { useCountdown } from "@/hooks/useCountdown";
@@ -74,7 +76,7 @@ function Dashboard() {
   const fetchStats = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get("http://localhost:8080/api/dashboard/patient", {
+      const res = await axios.get(`${API_BASE}/api/dashboard/patient`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setStats(res.data);
@@ -87,8 +89,8 @@ function Dashboard() {
     const token = localStorage.getItem("token");
       try {
         const headers = { Authorization: `Bearer ${token}` };
-        const doctorRes = await axios.get("http://localhost:8080/api/therapist", { headers });
-        const hospitalRes = await axios.get("http://localhost:8080/api/hospital", { headers });
+        const doctorRes = await axios.get(`${API_BASE}/api/therapist`, { headers });
+        const hospitalRes = await axios.get(`${API_BASE}/api/hospital`, { headers });
 
         setDoctors(doctorRes.data.map((doctor: any) => ({
           id: doctor.id?.toString() ?? doctor.email,
@@ -151,7 +153,7 @@ function Dashboard() {
     try {
       const numericId = isNaN(Number(selectedProvider.id)) ? null : Number(selectedProvider.id);
 
-      await axios.post("http://localhost:8080/api/appointments/book", {
+      await axios.post(`${API_BASE}/api/appointments/book`, {
         patientEmail,
         disease: "General Consultation",
         message: bookingData.reasonForVisit,

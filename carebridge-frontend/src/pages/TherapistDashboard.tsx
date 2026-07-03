@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 import { Button } from "@/components/ui/button";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useAppointmentSocket } from "@/hooks/useAppointmentSocket";
@@ -78,7 +80,7 @@ function TherapistDashboard() {
   const fetchStats = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get("http://localhost:8080/api/dashboard/therapist", {
+      const res = await axios.get(`${API_BASE}/api/dashboard/therapist`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setStats(res.data);
@@ -92,14 +94,14 @@ function TherapistDashboard() {
 
       // Fetch therapist profile
       const profileRes = await axios.get(
-        `http://localhost:8080/api/therapist/profile?email=${email}`,
+        `${API_BASE}/api/therapist/profile?email=${email}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setProfile(profileRes.data);
 
       // Fetch appointments
       const appointmentsRes = await axios.get(
-        `http://localhost:8080/api/appointments/therapist?email=${email}`,
+        `${API_BASE}/api/appointments/therapist?email=${email}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setAppointments((appointmentsRes.data || []).map((apt: any) => ({
@@ -161,7 +163,7 @@ function TherapistDashboard() {
   const handleAcceptAppointment = async (appointmentId: string) => {
     try {
       await axios.put(
-        `http://localhost:8080/api/appointments/${appointmentId}/accept`,
+        `${API_BASE}/api/appointments/${appointmentId}/accept`,
         {},
         { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
       );
@@ -179,7 +181,7 @@ function TherapistDashboard() {
   const handleRejectAppointment = async (appointmentId: string) => {
     try {
       await axios.put(
-        `http://localhost:8080/api/appointments/${appointmentId}/reject`,
+        `${API_BASE}/api/appointments/${appointmentId}/reject`,
         {},
         { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
       );
@@ -202,7 +204,7 @@ function TherapistDashboard() {
     try {
       const token = localStorage.getItem("token");
       const res = await axios.get(
-        `http://localhost:8080/api/availability/provider/slots?date=${date}`,
+        `${API_BASE}/api/availability/provider/slots?date=${date}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setAvailSlots(res.data || []);
@@ -218,7 +220,7 @@ function TherapistDashboard() {
     try {
       const token = localStorage.getItem("token");
       const res = await axios.get(
-        `http://localhost:8080/api/provider-leave/${profile.id}?type=THERAPIST`,
+        `${API_BASE}/api/provider-leave/${profile.id}?type=THERAPIST`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setLeaveList(res.data || []);
@@ -232,7 +234,7 @@ function TherapistDashboard() {
       const token = localStorage.getItem("token");
       const action = currentlyAvailable ? "disable" : "enable";
       await axios.put(
-        `http://localhost:8080/api/availability/slots/${slotId}/${action}`,
+        `${API_BASE}/api/availability/slots/${slotId}/${action}`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -250,7 +252,7 @@ function TherapistDashboard() {
     try {
       const token = localStorage.getItem("token");
       await axios.post(
-        `http://localhost:8080/api/provider-leave`,
+        `${API_BASE}/api/provider-leave`,
         { providerId: profile.id, providerType: "THERAPIST", leaveDate, reason: leaveReason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -270,7 +272,7 @@ function TherapistDashboard() {
     try {
       const token = localStorage.getItem("token");
       await axios.delete(
-        `http://localhost:8080/api/provider-leave/${leaveId}`,
+        `${API_BASE}/api/provider-leave/${leaveId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setAvailMsg("Leave removed. Slots regenerated.");
@@ -303,7 +305,7 @@ function TherapistDashboard() {
     try {
       const email = localStorage.getItem("userEmail");
       const response = await axios.put(
-        `http://localhost:8080/api/therapist/profile?email=${email}`,
+        `${API_BASE}/api/therapist/profile?email=${email}`,
         {
           name: editForm.name,
           phone: editForm.phone,

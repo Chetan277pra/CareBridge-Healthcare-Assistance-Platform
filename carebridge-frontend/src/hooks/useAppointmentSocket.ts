@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Client, IMessage } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+
 export interface AppointmentEvent {
   appointmentId: number;
   status: string;
@@ -61,7 +63,7 @@ export function useAppointmentSocket(
 
       const client = new Client({
         webSocketFactory: () =>
-          new SockJS(`http://localhost:8080/ws?token=${token}`),
+          new SockJS(`${API_BASE}/ws?token=${token}`),
         reconnectDelay: 0, // manual reconnect
         onConnect: () => {
           reconnectCount.current = 0;

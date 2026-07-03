@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { BookingModal } from "@/components/BookingModal";
 import { useLocation, Link } from "react-router-dom";
 import axios from "axios";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import L from "leaflet";
@@ -150,7 +152,7 @@ function Results() {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
         // 1. Fetch latest history record
-        const historyRes = await axios.get("http://localhost:8080/api/history/my-latest", { headers });
+        const historyRes = await axios.get(`${API_BASE}/api/history/my-latest`, { headers });
         const historyData = historyRes.data;
 
         if (!historyData || !historyData.disease) {
@@ -159,7 +161,7 @@ function Results() {
         }
 
         // 2. Fetch authenticated user profile to get patient coordinates
-        const userRes = await axios.get("http://localhost:8080/api/auth/me", { headers });
+        const userRes = await axios.get(`${API_BASE}/api/auth/me`, { headers });
         const userData = userRes.data;
 
         setResult({
@@ -189,7 +191,7 @@ function Results() {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
         if (result.therapistName) {
-          const doctorRes = await axios.get("http://localhost:8080/api/therapist", { headers });
+          const doctorRes = await axios.get(`${API_BASE}/api/therapist`, { headers });
           const matchedDoctor = doctorRes.data.find(
             (doc: any) => doc.name.toLowerCase() === result.therapistName.toLowerCase()
           );
@@ -202,7 +204,7 @@ function Results() {
         }
 
         if (result.hospitalSuggestion) {
-          const hospitalRes = await axios.get("http://localhost:8080/api/hospital", { headers });
+          const hospitalRes = await axios.get(`${API_BASE}/api/hospital`, { headers });
           const matchedHospital = hospitalRes.data.find(
             (hosp: any) => hosp.name.toLowerCase() === result.hospitalSuggestion.toLowerCase()
           );
@@ -296,7 +298,7 @@ function Results() {
     setRequestStatus(null);
 
     try {
-      await axios.post("http://localhost:8080/api/appointments/book", {
+      await axios.post(`${API_BASE}/api/appointments/book`, {
         patientEmail,
         disease: result.disease,
         message: bookingData.reasonForVisit,

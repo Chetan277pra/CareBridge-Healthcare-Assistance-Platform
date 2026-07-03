@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAppointmentSocket } from "@/hooks/useAppointmentSocket";
@@ -161,7 +163,7 @@ function PatientAppointments() {
     if (!token || !userEmail) return;
     try {
       const response = await axios.get(
-        `http://localhost:8080/api/appointments/history?email=${userEmail}`,
+        `${API_BASE}/api/appointments/history?email=${userEmail}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setAppointments(response.data || []);
